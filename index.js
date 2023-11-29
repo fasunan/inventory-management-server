@@ -32,6 +32,8 @@ async function run() {
     const shopCollection = client.db("inventoryDB").collection("shops");
     const productsCollection = client.db("inventoryDB").collection("products");
     const userCollection = client.db("inventoryDB").collection("users");
+    const cartCollection = client.db("inventoryDB").collection("carts");
+    const salesCollection = client.db("inventoryDB").collection("sales");
 
 
 // shop related API
@@ -122,25 +124,26 @@ async function run() {
 
     });
     
-    // app.patch('/products/:id', async (req, res) => {
-    //   const id = req.params.id;
-    //   const filter = { _id: new ObjectId(id) };
-    //   // const updatedDoc = {
-    //   //   // $set: {
-    //   //   //   role: 'admin'
-    //   //   // }
-    //   // }
-    //   const result = await productsCollection.updateOne(filter, updatedDoc);
-    //   res.send(result);
-    // })
+    // cart related API
+    app.get('/carts', async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      const result = await cartCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.post('/carts/:id', async (req, res) => {
+      const cartItem = req.body;
+      const result = await cartCollection.insertOne(cartItem);
+      res.send(result);
+    });
+    
 
 
     // user related API
 
     app.post('/user', async (req, res) => {
       const user = req.body;
-      // insert email if user doesnt exists: 
-      // you can do this many ways (1. email unique, 2. upsert 3. simple checking)
       const query = { email: user.email }
       const existingUser = await userCollection.findOne(query);
       if (existingUser) {
@@ -149,6 +152,79 @@ async function run() {
       const result = await userCollection.insertOne(user);
       res.send(result);
     });
+
+    // sales related api
+
+    app.get('/getPaid/:productId', async (req, res) => {
+      try {
+        const productId = req.params.productId;
+    
+        const productQuery = { productId: new ObjectId(productId) };
+        const product = await salesCollection.findOne(productQuery);
+    
+        if (!product) {
+          return res.status(404).json({ error: 'Product not found' });
+        }
+    
+        res.status(200).json(product);
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+      }
+    });
+
+
+app.post('/getPaid/:productId', async (req, res) => {
+  try {
+    const productId = req.params.productId;
+
+    
+    const productQuery = { _id: new ObjectId(productId) };
+    const product = await productsCollection.findOne(productQuery);
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    
+    const sellingPrice = parseFloat(product.cost) + 0.075 * parseFloat(product.cost) + parseFloat(product.profit);
+
+    const salesInfo = {
+      productId: product._id,
+      productName: product.name,
+      quantity: product.quantity,
+      sellingPrice,
+      date: new Date(),
+    };
+
+   
+    const result = await salesCollection.insertOne(salesInfo);
+
+    
+    const updateQuery = { _id: new ObjectId(productId) };
+    const updateData = {
+      $inc: { saleCount: 1 },
+    };
+    await productsCollection.updateOne(updateQuery, updateData);
+
+   
+    const newQuantity = product.quantity - 1;
+    if (newQuantity < 0) {
+      return res.status(400).json({ error: 'Product out of stock' });
+    }
+    const quantityUpdateQuery = { _id: new ObjectId(productId) };
+    const quantityUpdateData = {
+      $set: { quantity: newQuantity },
+    };
+    await productsCollection.updateOne(quantityUpdateQuery, quantityUpdateData);
+
+    res.status(201).json({ message: 'Transaction completed successfully', result });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 
 
 
