@@ -1,8 +1,10 @@
 const express = require("express");
 const cors = require("cors");
+require("dotenv").config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
-require("dotenv").config();
+
 const port = process.env.PORT || 5000;
 
 //  middleware
@@ -27,13 +29,14 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server (optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const shopCollection = client.db("inventoryDB").collection("shops");
     const productsCollection = client.db("inventoryDB").collection("products");
     const userCollection = client.db("inventoryDB").collection("users");
     const cartCollection = client.db("inventoryDB").collection("carts");
     const salesCollection = client.db("inventoryDB").collection("sales");
+    const paymentCollection = client.db("inventoryDB").collection("payment");
 
 
 // shop related API
@@ -222,6 +225,88 @@ app.post('/getPaid/:productId', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+// payment Api
+app.get('/payments/:email', async (req, res) => {
+  const query = { email: req.params.email }
+  if (req.params.email !== req.decoded.email) {
+    return res.status(403).send({ message: 'forbidden access' });
+  }
+  const result = await paymentCollection.find(query).toArray();
+  res.send(result);
+})
+
+// payment intent
+app.post('/create-payment-intent', async (req, res) => {
+  const { price } = req.body;
+  console.log(price);
+  const amount = parseInt(price * 100);
+  console.log(amount, 'amount inside the intent')
+
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount: amount,
+    currency: 'usd',
+    payment_method_types: ['card']
+  });
+
+  res.send({
+    clientSecret: paymentIntent.client_secret
+  })
+});
+
+// app.post('/payments', async (req, res) => {
+//   const payment = req.body;
+//   const paymentResult = await paymentCollection.insertOne(payment);
+//   const deleteResult = await cartCollection.deleteMany(query);
+
+//   res.send({ paymentResult, deleteResult });
+// })
+
+app.post('/payments', async (req, res) => {
+  const payment = req.body;
+
+  try {
+  
+    const paymentResult = await paymentCollection.insertOne(payment);
+
+    
+    const updateUserQuery = { email: payment.email }; 
+    let updatedProductLimit;
+
+    switch (payment.plan) {
+      case '$10':
+        updatedProductLimit = 200;
+        break;
+      case '$20':
+        updatedProductLimit = 450;
+        break;
+      case '$50':
+        updatedProductLimit = 1500;
+        break;
+      default:
+        updatedProductLimit = 0;
+    }
+
+    const updateResultUser = await userCollection.updateOne(
+      updateUserQuery,
+      { $set: { productLimit: updatedProductLimit } }
+    );
+
+    // Update the shop's product limit and increase income for admin
+    if (payment.role === 'admin') {
+      const updateResultShop = await shopCollection.updateOne(
+        { ownerId: payment.userId },
+        { $inc: { productLimit: updatedProductLimit, income: payment.amount } }
+      );
+    }
+
+    res.send({ paymentResult, updateResultUser });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).send('Internal Server Error');
   }
 });
 
