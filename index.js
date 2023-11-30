@@ -39,7 +39,7 @@ async function run() {
     const paymentCollection = client.db("inventoryDB").collection("payment");
 
 
-// shop related API
+    // shop related API
     app.get('/shop', async (req, res) => {
       const email = req.query.email;
       const query = { email: email };
@@ -47,7 +47,7 @@ async function run() {
       res.send(result);
     });
 
-    
+
     app.post('/shop', async (req, res) => {
       try {
         const ownerEmail = req.body.ownerEmail;
@@ -65,14 +65,14 @@ async function run() {
       }
     });
 
-// product related API
+    // product related API
     app.get('/products', async (req, res) => {
       const email = req.query.email;
       const query = { email: email };
       const result = await productsCollection.find(query).toArray();
       res.send(result);
     });
-    
+
     app.post('/products', async (req, res) => {
       try {
         const ownerEmail = req.body.ownerEmail;
@@ -92,7 +92,7 @@ async function run() {
 
     app.get('/products/:id', async (req, res) => {
       const id = req.params.id;
-      const query = { _id: new ObjectId (id) };
+      const query = { _id: new ObjectId(id) };
       const result = await productsCollection.findOne(query);
       res.send(result);
     });
@@ -126,7 +126,7 @@ async function run() {
       res.send(result);
 
     });
-    
+
     // cart related API
     app.get('/carts', async (req, res) => {
       const email = req.query.email;
@@ -140,10 +140,15 @@ async function run() {
       const result = await cartCollection.insertOne(cartItem);
       res.send(result);
     });
-    
+
 
 
     // user related API
+
+    app.get('/user', async (req, res) => {
+      const result = await userCollection.find().toArray();
+      res.send(result);
+    });
 
     app.post('/user', async (req, res) => {
       const user = req.body;
@@ -156,19 +161,39 @@ async function run() {
       res.send(result);
     });
 
+    app.patch('/user/:email', async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email }
+      // const filter = { _id: new ObjectId(id) };
+      const options = { upsert: true };
+      const userUpdateInfo = req.body;
+      const userData = {
+        $set: {
+          name: userUpdateInfo.name,
+          logo: userUpdateInfo.logo,
+          productLimit: userUpdateInfo.productLimit,
+          role: userUpdateInfo.role,
+
+        }
+      }
+      const result = await productsCollection.updateOne(query, userData, options);
+      res.send(result);
+
+    });
+
     // sales related api
 
     app.get('/getPaid/:productId', async (req, res) => {
       try {
         const productId = req.params.productId;
-    
+
         const productQuery = { productId: new ObjectId(productId) };
         const product = await salesCollection.findOne(productQuery);
-    
+
         if (!product) {
           return res.status(404).json({ error: 'Product not found' });
         }
-    
+
         res.status(200).json(product);
       } catch (error) {
         console.error(error);
@@ -177,138 +202,138 @@ async function run() {
     });
 
 
-app.post('/getPaid/:productId', async (req, res) => {
-  try {
-    const productId = req.params.productId;
-
-    
-    const productQuery = { _id: new ObjectId(productId) };
-    const product = await productsCollection.findOne(productQuery);
-
-    if (!product) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
-
-    
-    const sellingPrice = parseFloat(product.cost) + 0.075 * parseFloat(product.cost) + parseFloat(product.profit);
-
-    const salesInfo = {
-      productId: product._id,
-      productName: product.name,
-      quantity: product.quantity,
-      sellingPrice,
-      date: new Date(),
-    };
-
-   
-    const result = await salesCollection.insertOne(salesInfo);
-
-    
-    const updateQuery = { _id: new ObjectId(productId) };
-    const updateData = {
-      $inc: { saleCount: 1 },
-    };
-    await productsCollection.updateOne(updateQuery, updateData);
-
-   
-    const newQuantity = product.quantity - 1;
-    if (newQuantity < 0) {
-      return res.status(400).json({ error: 'Product out of stock' });
-    }
-    const quantityUpdateQuery = { _id: new ObjectId(productId) };
-    const quantityUpdateData = {
-      $set: { quantity: newQuantity },
-    };
-    await productsCollection.updateOne(quantityUpdateQuery, quantityUpdateData);
-
-    res.status(201).json({ message: 'Transaction completed successfully', result });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
+    app.post('/getPaid/:productId', async (req, res) => {
+      try {
+        const productId = req.params.productId;
 
 
-// payment Api
-app.get('/payments/:email', async (req, res) => {
-  const query = { email: req.params.email }
-  if (req.params.email !== req.decoded.email) {
-    return res.status(403).send({ message: 'forbidden access' });
-  }
-  const result = await paymentCollection.find(query).toArray();
-  res.send(result);
-})
+        const productQuery = { _id: new ObjectId(productId) };
+        const product = await productsCollection.findOne(productQuery);
 
-// payment intent
-app.post('/create-payment-intent', async (req, res) => {
-  const { price } = req.body;
-  // console.log(price);
-  const amount = parseInt(price * 100);
-  console.log(amount, 'amount inside the intent')
+        if (!product) {
+          return res.status(404).json({ error: 'Product not found' });
+        }
 
-  const paymentIntent = await stripe.paymentIntents.create({
-    amount: amount,
-    currency: 'usd',
-    payment_method_types: ['card']
-  });
 
-  res.send({
-    clientSecret: paymentIntent.client_secret
-  })
-});
+        const sellingPrice = parseFloat(product.cost) + 0.075 * parseFloat(product.cost) + parseFloat(product.profit);
 
-// app.post('/payments', async (req, res) => {
-//   const payment = req.body;
-//   const paymentResult = await paymentCollection.insertOne(payment);
-//   const deleteResult = await cartCollection.deleteMany(query);
+        const salesInfo = {
+          productId: product._id,
+          productName: product.name,
+          quantity: product.quantity,
+          sellingPrice,
+          date: new Date(),
+        };
 
-//   res.send({ paymentResult, deleteResult });
-// })
 
-app.post('/payments', async (req, res) => {
-  const payment = req.body;
+        const result = await salesCollection.insertOne(salesInfo);
 
-  try {
-  
-    const paymentResult = await paymentCollection.insertOne(payment);
 
-    
-    const updateUserQuery = { email: payment.email }; 
-    let updatedProductLimit;
+        const updateQuery = { _id: new ObjectId(productId) };
+        const updateData = {
+          $inc: { saleCount: 1 },
+        };
+        await productsCollection.updateOne(updateQuery, updateData);
 
-    switch (payment.plan) {
-      case '$10':
-        updatedProductLimit = 200;
-        break;
-      case '$20':
-        updatedProductLimit = 450;
-        break;
-      case '$50':
-        updatedProductLimit = 1500;
-        break;
-      default:
-        updatedProductLimit = 0;
-    }
 
-    const updateResultUser = await userCollection.updateOne(
-      updateUserQuery,
-      { $set: { productLimit: updatedProductLimit } }
-    );
+        const newQuantity = product.quantity - 1;
+        if (newQuantity < 0) {
+          return res.status(400).json({ error: 'Product out of stock' });
+        }
+        const quantityUpdateQuery = { _id: new ObjectId(productId) };
+        const quantityUpdateData = {
+          $set: { quantity: newQuantity },
+        };
+        await productsCollection.updateOne(quantityUpdateQuery, quantityUpdateData);
 
-    // Update the shop's product limit and increase income for admin
-    if (payment.role === 'admin') {
-      const updateResultShop = await shopCollection.updateOne(
-        { ownerId: payment.userId },
-        { $inc: { productLimit: updatedProductLimit, income: payment.amount } }
-      );
-    }
+        res.status(201).json({ message: 'Transaction completed successfully', result });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+      }
+    });
 
-    res.send({ paymentResult, updateResultUser });
-  } catch (error) {
-    console.error('Error:', error);
-    res.status(500).send('Internal Server Error');
-  }
-});
+
+    // payment Api
+    app.get('/payments/:email', async (req, res) => {
+      const query = { email: req.params.email }
+      if (req.params.email !== req.decoded.email) {
+        return res.status(403).send({ message: 'forbidden access' });
+      }
+      const result = await paymentCollection.find(query).toArray();
+      res.send(result);
+    })
+
+    // payment intent
+    app.post('/create-payment-intent', async (req, res) => {
+      const { price } = req.body;
+      // console.log(price);
+      const amount = parseInt(price * 100);
+      console.log(amount, 'amount inside the intent')
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        payment_method_types: ['card']
+      });
+
+      res.send({
+        clientSecret: paymentIntent.client_secret
+      })
+    });
+
+    // app.post('/payments', async (req, res) => {
+    //   const payment = req.body;
+    //   const paymentResult = await paymentCollection.insertOne(payment);
+    //   const deleteResult = await cartCollection.deleteMany(query);
+
+    //   res.send({ paymentResult, deleteResult });
+    // })
+
+    app.post('/payments', async (req, res) => {
+      const payment = req.body;
+
+      try {
+
+        const paymentResult = await paymentCollection.insertOne(payment);
+
+
+        const updateUserQuery = { email: payment.email };
+        let updatedProductLimit;
+
+        switch (payment.plan) {
+          case '$10':
+            updatedProductLimit = 200;
+            break;
+          case '$20':
+            updatedProductLimit = 450;
+            break;
+          case '$50':
+            updatedProductLimit = 1500;
+            break;
+          default:
+            updatedProductLimit = 0;
+        }
+
+        const updateResultUser = await userCollection.updateOne(
+          updateUserQuery,
+          { $set: { productLimit: updatedProductLimit } }
+        );
+
+        // Update the shop's product limit and increase income for admin
+        if (payment.role === 'admin') {
+          const updateResultShop = await shopCollection.updateOne(
+            { ownerId: payment.userId },
+            { $inc: { productLimit: updatedProductLimit, income: payment.amount } }
+          );
+        }
+
+        res.send({ paymentResult, updateResultUser });
+      } catch (error) {
+        console.error('Error:', error);
+        res.status(500).send('Internal Server Error');
+      }
+    });
 
 
 
