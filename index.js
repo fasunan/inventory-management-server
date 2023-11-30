@@ -161,10 +161,12 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/user/:email', async (req, res) => {
+    app.patch('/updateUser/:email', async (req, res) => {
       const email = req.params.email;
+      console.log(email);
       const query = { email: email }
-      // const filter = { _id: new ObjectId(id) };
+      const getUser= await userCollection.findOne(query);
+      console.log(getUser);
       const options = { upsert: true };
       const userUpdateInfo = req.body;
       const userData = {
@@ -176,7 +178,7 @@ async function run() {
 
         }
       }
-      const result = await productsCollection.updateOne(query, userData, options);
+      const result = await userCollection.updateOne(query, userData, options);
       res.send(result);
 
     });
