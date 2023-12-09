@@ -76,19 +76,59 @@ async function run() {
     app.post('/products', async (req, res) => {
       try {
         const ownerEmail = req.body.ownerEmail;
-        const userProductCount = await productsCollection.countDocuments({ ownerEmail });
-        const maxProductsAllowed = 3;
+    
+        // Assuming you have a user document with the shopId field
+        const user = await userCollection.findOne({ email: ownerEmail });
+    
+        if (!user) {
+          return res.status(404).json({ error: 'User not found' });
+        }
+    
+        const shopId = user.shopId;
+        console.log(shopId);
+    
+        // Assuming you have a shop document with the productLimit field
+        const shop = await shopCollection.findOne({ _id: ObjectId(shopId) });
+    
+        if (!shop) {
+          return res.status(404).json({ error: 'Shop not found' });
+        }
+    
+        const userProductCount = await shopCollection.countDocuments({ ownerEmail });
+        const maxProductsAllowed = shop.productLimit;
+        console.log(maxProductsAllowed)
+    
         if (userProductCount >= maxProductsAllowed) {
           return res.status(403).json({ error: 'Product added limit reached' });
         }
+    
         const productsInfo = { ...req.body, ownerEmail };
         const result = await productsCollection.insertOne(productsInfo);
+    
         res.status(201).json({ message: 'Product added successfully', result });
       } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Internal Server Error' });
       }
     });
+    
+
+    // app.post('/products', async (req, res) => {
+    //   try {
+    //     const ownerEmail = req.body.ownerEmail;
+    //     const userProductCount = await productsCollection.countDocuments({ ownerEmail });
+    //     const maxProductsAllowed = 3;
+    //     if (userProductCount >= maxProductsAllowed) {
+    //       return res.status(403).json({ error: 'Product added limit reached' });
+    //     }
+    //     const productsInfo = { ...req.body, ownerEmail };
+    //     const result = await productsCollection.insertOne(productsInfo);
+    //     res.status(201).json({ message: 'Product added successfully', result });
+    //   } catch (error) {
+    //     console.error(error);
+    //     res.status(500).json({ error: 'Internal Server Error' });
+    //   }
+    // });
 
     app.get('/products/:id', async (req, res) => {
       const id = req.params.id;
@@ -149,6 +189,11 @@ async function run() {
       const result = await userCollection.find().toArray();
       res.send(result);
     });
+    app.get('/singleUser', async (req, res) => {
+      const email= req.query.email
+      const result = await userCollection.findOne(email);
+      res.send(result);
+    });
 
     app.post('/user', async (req, res) => {
       const user = req.body;
@@ -171,9 +216,8 @@ async function run() {
       const userUpdateInfo = req.body;
       const userData = {
         $set: {
-          name: userUpdateInfo.name,
+          shopName: userUpdateInfo.shopName,
           logo: userUpdateInfo.logo,
-          productLimit: userUpdateInfo.productLimit,
           role: userUpdateInfo.role,
 
         }
@@ -284,53 +328,51 @@ async function run() {
       })
     });
 
-    // app.post('/payments', async (req, res) => {
-    //   const payment = req.body;
-    //   const paymentResult = await paymentCollection.insertOne(payment);
-    //   const deleteResult = await cartCollection.deleteMany(query);
-
-    //   res.send({ paymentResult, deleteResult });
-    // })
 
     app.post('/payments', async (req, res) => {
       const payment = req.body;
-
+console.log(typeof payment.plan);
       try {
 
         const paymentResult = await paymentCollection.insertOne(payment);
 
 
-        const updateUserQuery = { email: payment.email };
+        const updateUserQuery = { ownerEmail: payment.email };
+        
         let updatedProductLimit;
 
         switch (payment.plan) {
-          case '$10':
+          case 10:
             updatedProductLimit = 200;
             break;
-          case '$20':
+          case 20:
             updatedProductLimit = 450;
             break;
-          case '$50':
+          case 50:
             updatedProductLimit = 1500;
             break;
-          default:
-            updatedProductLimit = 0;
         }
 
-        const updateResultUser = await userCollection.updateOne(
+        // const updateResultShop = await shopCollection.updateOne(
+        //   updateUserQuery,
+        //   { ownerId: payment.shopId }, // Assuming shop has ownerId field
+        //   { $set: { productLimit: updatedProductLimit } }
+        // );
+
+        const updateResultShop = await shopCollection.updateOne(
           updateUserQuery,
           { $set: { productLimit: updatedProductLimit } }
         );
 
         // Update the shop's product limit and increase income for admin
         if (payment.role === 'admin') {
-          const updateResultShop = await shopCollection.updateOne(
-            { ownerId: payment.userId },
-            { $inc: { productLimit: updatedProductLimit, income: payment.amount } }
+          const updateResultAdmin = await userCollection.updateOne(
+            { ownerId: payment.shopId },
+            { $inc: {  income: payment.amount } }
           );
         }
 
-        res.send({ paymentResult, updateResultUser });
+        res.send({ paymentResult, updateResultShop });
       } catch (error) {
         console.error('Error:', error);
         res.status(500).send('Internal Server Error');
